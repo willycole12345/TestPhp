@@ -44,6 +44,7 @@ class AuthenticatedSessionController extends Controller
         return redirect()->intended(route('dashboard', absolute: false));
     }
 
+
     public function googleredirect($driver)
     {
     return Socialite::driver($driver)->redirect();
@@ -78,7 +79,7 @@ class AuthenticatedSessionController extends Controller
 
            if($createUsers){
               $noewuser=  $this->createotp($user->getName());
-                $email = $user->getName();
+                $email = $user->getEmail();
                // dd( $noewuser);
                   return $this->otp(base64_encode($noewuser),$email );
             } else {
@@ -105,10 +106,36 @@ class AuthenticatedSessionController extends Controller
         return redirect('/');
     }
 
-
+ public function createN($email,$otp){
+   $response= array();
+    $confirm_OTP_update = Otp::where('code', '=', $otp)
+    ->limit(1)
+    ->orderBy('id', 'desc')
+    ->update([
+        "status" => "Y"
+    ]);
+            //  dd( $confirm_OTP_update);
+        if ($confirm_OTP_update) {
+            $otp_ = rand(100000, 999999);
+            $createotp = Otp::create([
+                'email' => $email,
+                'code' => $otp_
+            ]);
+          //  dd($createotp);
+            if ($createotp) {
+                $response['messege'] = $createotp->code;
+                $response['status'] = "success";
+            
+            } else {
+                $response['messege'] = "";
+                $response['status'] = "failed";
+            }
+            return response()->json($response);
+        }
+      
+ }
     public function createotp($email, $otp = "")
     {
-
         $otp = rand(100000, 999999);
 
         $confirmOTP = Otp::where('email', $email)
@@ -125,18 +152,16 @@ class AuthenticatedSessionController extends Controller
             ]);
 
             if ($createotp) {
-                $response['messege'] = "Otp Created";
-                $response['messege'] = $createotp->code;
-                $response['status'] = "success";
-                return response()->json($response);
+
+               return $createotp->code;
+           
             } else {
 
                 return false;
             }
         } elseif ($confirmOTP->status = "N") {
 
-            $confirm_OTP_update = Otp::where('email', $email)
-                ->where('code', '=', $otp)
+            $confirm_OTP_update = Otp::where('code', '=', $otp)
                 ->limit(1)
                 ->orderBy('id', 'desc')
                 ->update([
@@ -165,68 +190,96 @@ class AuthenticatedSessionController extends Controller
 
     public function updateotp($email,$otp)
     {
+        $response = array();
        
-        $confirm_OTP = Otp::where('email', $email)
-        ->where('code','=',$otp)
+        $confirm_OTP = Otp::where('code','=',$otp)
         ->limit(1)
        ->orderBy('id', 'desc')
        ->first();
-
+       // dd($confirm_OTP);
         if($confirm_OTP->status == "N" ){
 
-            $confirm_OTP_update = Otp::where('email', $email)
-            ->where('code','=',$otp)
+            $confirm_OTP_update = Otp::where('code','=',$otp)
             ->limit(1)
            ->orderBy('id', 'desc')
            ->update([
             "status"=>"Y"
            ]);
-
-           $response['messege'] = "Otp Created";
-           $response['messege'] = $confirm_OTP_update->code;
-           $response['status'] = "success";
-           return response()->json($response);
+          // dd($confirm_OTP_update );
+            if ($confirm_OTP_update) {
+               
+                $response['status'] = "success";
+            }else{
+               
+                $response['status'] = "failed";
+         }
         }else{
             return false;
         }
 
+        return response()->json($response);
     }
     
 
     public function Otpconfirmation(request $request)
     {
+       // dd($request->otp);
+       $response = array();
+       $request->validate([
+            'email' => '',
+            'otp' => '',    
+        ]); 
 
-        $request->validate([
-            'email' => 'required',
-            'otp' => 'required',    
-        ]);
-    
-        $response = array();
-        $confirmOTP = Otp::where('email', $request->email)
-                                        ->where('code','=',$request->otp)
+        
+        if (is_null($request->otp)) {
+                 $response['message'] = "Please Enter your OTP Code for Confirmation";
+                 $response['status'] = "failed";
+        } else {
+
+            $confirmOTP = Otp::where('code','=',$request->otp)
                                        // ->where('status','=','N')
                                         ->limit(1)
                                        ->orderBy('id', 'desc')
                                        ->first();
+       // dd($confirmOTP->code);
+                if(is_null($confirmOTP)){
 
-        if(is_null($confirmOTP)){
+                    $response['message'] = "Please Enter your OTP Code for Confirmation";
+                    $response['status'] = "failed";
+                 
+                } elseif ($confirmOTP->code !== $request->otp) {
 
-            $response['message'] = "Please Enter your OTP Code for Confirmation";
-            $response['status'] = "failed";
-            return response()->json($response);
-        } elseif ($confirmOTP->code !== $request->otp) {
+                    $response['message'] = "Please Check your OTP Code";
+                    $response['status'] = "failed";
+                  
+                }elseif($confirmOTP->code == $request->otp){
+                
+                
 
-            $response['message'] = "Please Check your OTP Code";
-            $response['status'] = "failed";
-            return response()->json($response); 
-        }elseif($confirmOTP->code == $request->otp){
-
-            $updateCode = Otp::where('email', $request->email)->where('code', '=', $$request->otp)->update([
-                'status' => "Y"
-            ]);
-            return redirect()->route('dashoard');
+                    $updateCode = Otp::where('code', '=', $request->otp)->Update([
+                        'status' => "Y"
+                    ]);
+             //   dd($updateCode);
+                
+                    if($updateCode == true){
+                       
+                        $existingUser = User::where('email', $request->email)->first();
+                        $host = 'http://'.request()->getHttpHost().'/dashboard';
+                    
+                                            $response['status'] = "success";
+                    $response['route'] = $host;
+                        auth()->login($existingUser, true);
+                    
+                    
+                    } else {
+                    
+                    }
+                    
+                }
+       
         }
-    }
+        return response()->json($response);
+     }
 
     
 }
